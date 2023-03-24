@@ -4,28 +4,28 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM php:7.4-fpm-alpine
+FROM php:8.2-fpm
 
 # persistent dependencies
 RUN set -eux; \
-	apk add --no-cache \
-# in theory, docker-entrypoint.sh is POSIX-compliant, but priority is a working, consistent image
-		bash \
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
 # Ghostscript is required for rendering PDF previews
 		ghostscript \
-# Alpine package for "imagemagick" contains ~120 .so files, see: https://github.com/docker-library/wordpress/pull/497
-		imagemagick \
-	;
+	; \
+	rm -rf /var/lib/apt/lists/*
 
 # install the PHP extensions we need (https://make.wordpress.org/hosting/handbook/handbook/server-environment/#php-extensions)
 RUN set -ex; \
 	\
-	apk add --no-cache --virtual .build-deps \
-		$PHPIZE_DEPS \
-		freetype-dev \
-		icu-dev \
-		imagemagick-dev \
-		libjpeg-turbo-dev \
+	savedAptMark="$(apt-mark showmanual)"; \
+	\
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
+		libfreetype6-dev \
+		libicu-dev \
+		libjpeg-dev \
+		libmagickwand-dev \
 		libpng-dev \
 		libwebp-dev \
 		libzip-dev \
@@ -44,7 +44,6 @@ RUN set -ex; \
 		mysqli \
 		zip \
 	; \
-# WARNING: imagick is likely not supported on Alpine: https://github.com/Imagick/imagick/issues/328
 # https://pecl.php.net/package/imagick
 	pecl install imagick-3.6.0; \
 	docker-php-ext-enable imagick; \
@@ -58,14 +57,19 @@ RUN set -ex; \
 	\
 	extDir="$(php -r 'echo ini_get("extension_dir");')"; \
 	[ -d "$extDir" ]; \
-	runDeps="$( \
-		scanelf --needed --nobanner --format '%n#p' --recursive "$extDir" \
-			| tr ',' '\n' \
-			| sort -u \
-			| awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }' \
-	)"; \
-	apk add --no-network --virtual .wordpress-phpexts-rundeps $runDeps; \
-	apk del --no-network .build-deps; \
+# reset apt-mark's "manual" list so that "purge --auto-remove" will remove all build dependencies
+	apt-mark auto '.*' > /dev/null; \
+	apt-mark manual $savedAptMark; \
+	ldd "$extDir"/*.so \
+		| awk '/=>/ { print $3 }' \
+		| sort -u \
+		| xargs -r dpkg-query -S \
+		| cut -d: -f1 \
+		| sort -u \
+		| xargs -rt apt-mark manual; \
+	\
+	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+	rm -rf /var/lib/apt/lists/*; \
 	\
 	! { ldd "$extDir"/*.so | grep 'not found'; }; \
 # check for output like "PHP Warning:  PHP Startup: Unable to load dynamic library 'foo' (tried: ...)
@@ -81,7 +85,6 @@ RUN set -eux; \
 		echo 'opcache.interned_strings_buffer=8'; \
 		echo 'opcache.max_accelerated_files=4000'; \
 		echo 'opcache.revalidate_freq=2'; \
-		echo 'opcache.fast_shutdown=1'; \
 	} > /usr/local/etc/php/conf.d/opcache-recommended.ini
 # https://wordpress.org/support/article/editing-wp-config-php/#configure-error-logging
 RUN { \
@@ -99,8 +102,8 @@ RUN { \
 	} > /usr/local/etc/php/conf.d/error-logging.ini
 
 RUN set -eux; \
-	version='6.0.2'; \
-	sha1='9348f0757c21504d085a6c866ccbb86573b39d6f'; \
+	version='6.1.1'; \
+	sha1='80f0f829645dec07c68bcfe0a0a1e1d563992fcb'; \
 	\
 	curl -o wordpress.tar.gz -fL "https://wordpress.org/wordpress-$version.tar.gz"; \
 	echo "$sha1 *wordpress.tar.gz" | sha1sum -c -; \
@@ -134,7 +137,7 @@ RUN set -eux; \
 		mkdir "wp-content/$dir"; \
 	done; \
 	chown -R www-data:www-data wp-content; \
-	chmod -R 777 wp-content
+	chmod -R 1777 wp-content
 
 VOLUME /var/www/html
 

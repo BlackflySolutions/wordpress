@@ -85,7 +85,6 @@ RUN set -eux; \
 		echo 'opcache.interned_strings_buffer=8'; \
 		echo 'opcache.max_accelerated_files=4000'; \
 		echo 'opcache.revalidate_freq=2'; \
-		echo 'opcache.fast_shutdown=1'; \
 	} > /usr/local/etc/php/conf.d/opcache-recommended.ini
 # https://wordpress.org/support/article/editing-wp-config-php/#configure-error-logging
 RUN { \
@@ -103,8 +102,8 @@ RUN { \
 	} > /usr/local/etc/php/conf.d/error-logging.ini
 
 RUN set -eux; \
-	version='6.0.2'; \
-	sha1='9348f0757c21504d085a6c866ccbb86573b39d6f'; \
+	version='6.1.1'; \
+	sha1='80f0f829645dec07c68bcfe0a0a1e1d563992fcb'; \
 	\
 	curl -o wordpress.tar.gz -fL "https://wordpress.org/wordpress-$version.tar.gz"; \
 	echo "$sha1 *wordpress.tar.gz" | sha1sum -c -; \
@@ -138,7 +137,7 @@ RUN set -eux; \
 		mkdir "wp-content/$dir"; \
 	done; \
 	chown -R www-data:www-data wp-content; \
-	chmod -R 777 wp-content
+	chmod -R 1777 wp-content
 
 VOLUME /var/www/html
 

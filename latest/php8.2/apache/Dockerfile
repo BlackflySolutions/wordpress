@@ -4,7 +4,7 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM php:7.4-fpm
+FROM php:8.2-apache
 
 # persistent dependencies
 RUN set -eux; \
@@ -85,7 +85,6 @@ RUN set -eux; \
 		echo 'opcache.interned_strings_buffer=8'; \
 		echo 'opcache.max_accelerated_files=4000'; \
 		echo 'opcache.revalidate_freq=2'; \
-		echo 'opcache.fast_shutdown=1'; \
 	} > /usr/local/etc/php/conf.d/opcache-recommended.ini
 # https://wordpress.org/support/article/editing-wp-config-php/#configure-error-logging
 RUN { \
@@ -103,8 +102,27 @@ RUN { \
 	} > /usr/local/etc/php/conf.d/error-logging.ini
 
 RUN set -eux; \
-	version='6.0.2'; \
-	sha1='9348f0757c21504d085a6c866ccbb86573b39d6f'; \
+	a2enmod rewrite expires; \
+	\
+# https://httpd.apache.org/docs/2.4/mod/mod_remoteip.html
+	a2enmod remoteip; \
+	{ \
+		echo 'RemoteIPHeader X-Forwarded-For'; \
+# these IP ranges are reserved for "private" use and should thus *usually* be safe inside Docker
+		echo 'RemoteIPTrustedProxy 10.0.0.0/8'; \
+		echo 'RemoteIPTrustedProxy 172.16.0.0/12'; \
+		echo 'RemoteIPTrustedProxy 192.168.0.0/16'; \
+		echo 'RemoteIPTrustedProxy 169.254.0.0/16'; \
+		echo 'RemoteIPTrustedProxy 127.0.0.0/8'; \
+	} > /etc/apache2/conf-available/remoteip.conf; \
+	a2enconf remoteip; \
+# https://github.com/docker-library/wordpress/issues/383#issuecomment-507886512
+# (replace all instances of "%h" with "%a" in LogFormat)
+	find /etc/apache2 -type f -name '*.conf' -exec sed -ri 's/([[:space:]]*LogFormat[[:space:]]+"[^"]*)%h([^"]*")/\1%a\2/g' '{}' +
+
+RUN set -eux; \
+	version='6.1.1'; \
+	sha1='80f0f829645dec07c68bcfe0a0a1e1d563992fcb'; \
 	\
 	curl -o wordpress.tar.gz -fL "https://wordpress.org/wordpress-$version.tar.gz"; \
 	echo "$sha1 *wordpress.tar.gz" | sha1sum -c -; \
@@ -138,7 +156,7 @@ RUN set -eux; \
 		mkdir "wp-content/$dir"; \
 	done; \
 	chown -R www-data:www-data wp-content; \
-	chmod -R 777 wp-content
+	chmod -R 1777 wp-content
 
 VOLUME /var/www/html
 
@@ -146,4 +164,4 @@ COPY --chown=www-data:www-data wp-config-docker.php /usr/src/wordpress/
 COPY docker-entrypoint.sh /usr/local/bin/
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["php-fpm"]
+CMD ["apache2-foreground"]

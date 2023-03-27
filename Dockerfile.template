@@ -2,6 +2,7 @@
 	def is_alpine:
 		env.variant | index("alpine")
 -}}
+# create as a "base" without the wordpress code
 FROM php:{{ env.phpVersion }}-{{ env.variant }} as wordpress-base
 
 {{ if env.version != "cli" then ( -}}
@@ -65,6 +66,10 @@ RUN set -ex; \
 		libpng-dev \
 		libwebp-dev \
 		libzip-dev \
+		libxml2-dev \
+		libc-client-dev \
+		libkrb5-dev \
+		libmcrypt-dev \
 	; \
 {{ ) end -}}
 	\
@@ -73,6 +78,7 @@ RUN set -ex; \
 		--with-jpeg \
 		--with-webp \
 	; \
+	docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
 	docker-php-ext-install -j "$(nproc)" \
 		bcmath \
 		exif \
@@ -80,6 +86,11 @@ RUN set -ex; \
 		intl \
 		mysqli \
 		zip \
+		dom \
+		soap \
+		sockets \
+		gettext \
+		imap \
 	; \
 {{ if is_alpine then ( -}}
 # WARNING: imagick is likely not supported on Alpine: https://github.com/Imagick/imagick/issues/328
@@ -87,6 +98,8 @@ RUN set -ex; \
 # https://pecl.php.net/package/imagick
 	pecl install imagick-3.6.0; \
 	docker-php-ext-enable imagick; \
+	pecl install -o redis && docker-php-ext-enable redis; \
+	pecl install -o apcu && docker-php-ext-enable apcu; \
 	rm -r /tmp/pear; \
 	\
 # some misbehaving extensions end up outputting to stdout 🙈 (https://github.com/docker-library/wordpress/issues/669#issuecomment-993945967)

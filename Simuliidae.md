@@ -20,5 +20,5 @@ git diff origin/simuliidae origin/docker-library
 When the docker-library upstream changes, the usual way to update the simuliidae branch is:
 1. git fetch upstream
 2. git merge upstream/master simuliidae
-3. ./apply-templates.sh
-4. commit changes
+3. commit changes
+4. ./apply-templates.sh

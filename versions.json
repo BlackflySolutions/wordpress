@@ -11,7 +11,7 @@
     "variants": [
       "apache"
     ],
-    "civicrmVersion": "5.64.3",
+    "civicrmVersion": "5.65.0",
     "version": "6.3.1"
   }
 }

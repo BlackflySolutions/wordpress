@@ -25,7 +25,8 @@ RUN set -ex; \
 		$PHPIZE_DEPS \
 		freetype-dev \
 		icu-dev \
-		imagemagick-dev \
+		imagemagick-dev libheif-dev \
+		libavif-dev \
 		libjpeg-turbo-dev \
 		libpng-dev \
 		libwebp-dev \
@@ -33,6 +34,7 @@ RUN set -ex; \
 	; \
 	\
 	docker-php-ext-configure gd \
+		--with-avif \
 		--with-freetype \
 		--with-jpeg \
 		--with-webp \
@@ -47,9 +49,18 @@ RUN set -ex; \
 	; \
 # WARNING: imagick is likely not supported on Alpine: https://github.com/Imagick/imagick/issues/328
 # https://pecl.php.net/package/imagick
-	pecl install imagick-3.6.0; \
-	docker-php-ext-enable imagick; \
-	rm -r /tmp/pear; \
+# https://github.com/Imagick/imagick/commit/5ae2ecf20a1157073bad0170106ad0cf74e01cb6 (causes a lot of build failures, but strangely only intermittent ones 🤔)
+# see also https://github.com/Imagick/imagick/pull/641
+# this is "pecl install imagick-3.7.0", but by hand so we can apply a small hack / part of the above commit
+	curl -fL -o imagick.tgz 'https://pecl.php.net/get/imagick-3.7.0.tgz'; \
+	echo '5a364354109029d224bcbb2e82e15b248be9b641227f45e63425c06531792d3e *imagick.tgz' | sha256sum -c -; \
+	tar --extract --directory /tmp --file imagick.tgz imagick-3.7.0; \
+	grep '^//#endif$' /tmp/imagick-3.7.0/Imagick.stub.php; \
+	test "$(grep -c '^//#endif$' /tmp/imagick-3.7.0/Imagick.stub.php)" = '1'; \
+	sed -i -e 's!^//#endif$!#endif!' /tmp/imagick-3.7.0/Imagick.stub.php; \
+	grep '^//#endif$' /tmp/imagick-3.7.0/Imagick.stub.php && exit 1 || :; \
+	docker-php-ext-install /tmp/imagick-3.7.0; \
+	rm -rf imagick.tgz /tmp/imagick-3.7.0; \
 	\
 # some misbehaving extensions end up outputting to stdout 🙈 (https://github.com/docker-library/wordpress/issues/669#issuecomment-993945967)
 	out="$(php -r 'exit(0);')"; \
@@ -97,8 +108,8 @@ RUN { \
 # sub   rsa2048 2018-05-31 [E]
 ENV WORDPRESS_CLI_GPG_KEY 63AF7AA15067C05616FDDD88A3A2E8F226F0BC06
 
-ENV WORDPRESS_CLI_VERSION 2.8.1
-ENV WORDPRESS_CLI_SHA512 c1d40ee90b330ca1f8ddbed14b938b41ec5d9ff723c7c1cf3f41a2d9a1b271079a51a37ea3d1c9aa9c628fdd43449dba3995a8de150a68abbd505b06b91d9d2b
+ENV WORDPRESS_CLI_VERSION 2.11.0
+ENV WORDPRESS_CLI_SHA512 adb12146bab8d829621efed41124dcd0012f9027f47e0228be7080296167566070e4a026a09c3989907840b21de94b7a35f3bfbd5f827c12f27c5803546d1bba
 
 RUN set -ex; \
 	\

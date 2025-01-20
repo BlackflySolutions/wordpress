@@ -5,7 +5,7 @@ set -Eeuo pipefail
 # https://make.wordpress.org/hosting/handbook/server-environment/#php
 # https://wordpress.org/support/update-php/#before-you-update-your-php-version
 # https://make.wordpress.org/core/handbook/references/php-compatibility-and-wordpress-versions/
-defaultPhpVersion='php8.0'
+defaultPhpVersion='php8.2'
 defaultVariant='apache'
 
 self="$(basename "$BASH_SOURCE")"
@@ -43,17 +43,19 @@ dirCommit() {
 
 getArches() {
 	local repo="$1"; shift
-	local officialImagesUrl='https://github.com/docker-library/official-images/raw/master/library/'
+	local officialImagesBase="${BASHBREW_LIBRARY:-https://github.com/docker-library/official-images/raw/HEAD/library}/"
 
-	eval "declare -g -A parentRepoToArches=( $(
-		find -name 'Dockerfile' -exec awk '
+	local parentRepoToArchesStr
+	parentRepoToArchesStr="$(
+		find -name 'Dockerfile' -exec awk -v officialImagesBase="$officialImagesBase" '
 				toupper($1) == "FROM" && $2 !~ /^('"$repo"'|scratch|.*\/.*)(:|$)/ {
-					print "'"$officialImagesUrl"'" $2
+					printf "%s%s\n", officialImagesBase, $2
 				}
 			' '{}' + \
 			| sort -u \
-			| xargs bashbrew cat --format '[{{ .RepoName }}:{{ .TagName }}]="{{ join " " .TagEntry.Architectures }}"'
-	) )"
+			| xargs -r bashbrew cat --format '["{{ .RepoName }}:{{ .TagName }}"]="{{ join " " .TagEntry.Architectures }}"'
+	)"
+	eval "declare -g -A parentRepoToArches=( $parentRepoToArchesStr )"
 }
 getArches 'wordpress'
 

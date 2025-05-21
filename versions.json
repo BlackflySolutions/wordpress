@@ -3,14 +3,15 @@
     "phpVersions": [
       "8.1",
       "8.2",
-      "8.3"
+      "8.3",
+      "8.4"
     ],
-    "sha1": "dfb745d4067368bb9a9491f2b6f7e8d52d740fd1",
-    "upstream": "6.7.1",
+    "sha1": "52d5f05c96a9155f78ed84700264307e5dea14b4",
+    "upstream": "6.8.1",
     "variants": [
       "apache"
     ],
-    "civicrmVersion": "5.81.1",
-    "version": "6.7.1"
+    "civicrmVersion": "6.2.0",
+    "version": "6.8.1"
   }
 }

@@ -4,7 +4,8 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM php:8.1-apache
+# create as a "base" without the wordpress code
+FROM php:8.1-apache as wordpress-base
 
 # persistent dependencies
 RUN set -eux; \
@@ -30,6 +31,10 @@ RUN set -ex; \
 		libpng-dev \
 		libwebp-dev \
 		libzip-dev \
+		libxml2-dev \
+		libc-client-dev \
+		libkrb5-dev \
+		libmcrypt-dev \
 	; \
 	\
 	docker-php-ext-configure gd \
@@ -38,6 +43,7 @@ RUN set -ex; \
 		--with-jpeg \
 		--with-webp \
 	; \
+	docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
 	docker-php-ext-install -j "$(nproc)" \
 		bcmath \
 		exif \
@@ -45,10 +51,18 @@ RUN set -ex; \
 		intl \
 		mysqli \
 		zip \
+		dom \
+		soap \
+		sockets \
+		gettext \
+		imap \
 	; \
+       # docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
 # https://pecl.php.net/package/imagick
 	pecl install imagick-3.8.0; \
 	docker-php-ext-enable imagick; \
+	pecl install -o redis && docker-php-ext-enable redis; \
+	pecl install -o apcu && docker-php-ext-enable apcu; \
 	rm -r /tmp/pear; \
 	\
 # some misbehaving extensions end up outputting to stdout 🙈 (https://github.com/docker-library/wordpress/issues/669#issuecomment-993945967)
@@ -121,7 +135,7 @@ RUN set -eux; \
 # https://github.com/docker-library/wordpress/issues/383#issuecomment-507886512
 # (replace all instances of "%h" with "%a" in LogFormat)
 	find /etc/apache2 -type f -name '*.conf' -exec sed -ri 's/([[:space:]]*LogFormat[[:space:]]+"[^"]*)%h([^"]*")/\1%a\2/g' '{}' +
-
+FROM wordpress-base
 RUN set -eux; \
 	version='6.8.1'; \
 	sha1='52d5f05c96a9155f78ed84700264307e5dea14b4'; \

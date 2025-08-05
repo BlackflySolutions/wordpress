@@ -81,7 +81,11 @@ RUN set -ex; \
 		--with-jpeg \
 		--with-webp \
 	; \
+{{ if  env.phpVersion | startswith("8.4") then ( -}}
+#	docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
+{{ ) else ( -}}
 	docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
+{{ ) end -}}
 	docker-php-ext-install -j "$(nproc)" \
 		bcmath \
 		exif \
@@ -93,11 +97,21 @@ RUN set -ex; \
 		soap \
 		sockets \
 		gettext \
+{{ if  env.phpVersion | startswith("8.4") then ( -}}
+#		imap \
+{{ ) else ( -}}
 		imap \
+{{ ) end -}}
 	; \
 {{ if is_alpine then ( -}}
 # WARNING: imagick is likely not supported on Alpine: https://github.com/Imagick/imagick/issues/328
 {{ ) else "" end -}}
+{{ if  env.phpVersion | startswith("8.4") then ( -}}
+       pecl install imap; \
+       docker-php-ext-enable imap; \
+{{ ) else ( -}}
+       # docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
+{{ ) end -}}
 # https://pecl.php.net/package/imagick
 	pecl install imagick-3.8.0; \
 	docker-php-ext-enable imagick; \

@@ -4,29 +4,33 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM php:8.1-fpm-alpine
+FROM php:8.5-fpm
 
 # persistent dependencies
 RUN set -eux; \
-	apk add --no-cache \
-# in theory, docker-entrypoint.sh is POSIX-compliant, but priority is a working, consistent image
-		bash \
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
 # Ghostscript is required for rendering PDF previews
 		ghostscript \
-# Alpine package for "imagemagick" contains ~120 .so files, see: https://github.com/docker-library/wordpress/pull/497
-		imagemagick \
-	;
+# pull in AV1 & HEVC image encoding (and not just decoding)
+# https://github.com/docker-library/wordpress/issues/996
+		libheif-plugin-aomenc \
+		libheif-plugin-x265 \
+	; \
+	rm -rf /var/lib/apt/lists/*
 
 # install the PHP extensions we need (https://make.wordpress.org/hosting/handbook/handbook/server-environment/#php-extensions)
 RUN set -ex; \
 	\
-	apk add --no-cache --virtual .build-deps \
-		$PHPIZE_DEPS \
-		freetype-dev \
-		icu-dev \
-		imagemagick-dev libheif-dev \
+	savedAptMark="$(apt-mark showmanual)"; \
+	\
+	apt-get update; \
+	apt-get install -y --no-install-recommends \
 		libavif-dev \
-		libjpeg-turbo-dev \
+		libfreetype6-dev \
+		libicu-dev \
+		libjpeg-dev \
+		libmagickwand-dev \
 		libpng-dev \
 		libwebp-dev \
 		libzip-dev \
@@ -46,9 +50,8 @@ RUN set -ex; \
 		mysqli \
 		zip \
 	; \
-# WARNING: imagick is likely not supported on Alpine: https://github.com/Imagick/imagick/issues/328
 # https://pecl.php.net/package/imagick
-	pecl install imagick-3.8.0; \
+	pecl install imagick-3.8.1; \
 	docker-php-ext-enable imagick; \
 	rm -r /tmp/pear; \
 	\
@@ -60,14 +63,19 @@ RUN set -ex; \
 	\
 	extDir="$(php -r 'echo ini_get("extension_dir");')"; \
 	[ -d "$extDir" ]; \
-	runDeps="$( \
-		scanelf --needed --nobanner --format '%n#p' --recursive "$extDir" \
-			| tr ',' '\n' \
-			| sort -u \
-			| awk 'system("[ -e /usr/local/lib/" $1 " ]") == 0 { next } { print "so:" $1 }' \
-	)"; \
-	apk add --no-network --virtual .wordpress-phpexts-rundeps $runDeps; \
-	apk del --no-network .build-deps; \
+# reset apt-mark's "manual" list so that "purge --auto-remove" will remove all build dependencies
+	apt-mark auto '.*' > /dev/null; \
+	apt-mark manual $savedAptMark; \
+	ldd "$extDir"/*.so \
+		| awk '/=>/ { so = $(NF-1); if (index(so, "/usr/local/") == 1) { next }; gsub("^/(usr/)?", "", so); printf "*%s\n", so }' \
+		| sort -u \
+		| xargs -r dpkg-query --search \
+		| cut -d: -f1 \
+		| sort -u \
+		| xargs -rt apt-mark manual; \
+	\
+	apt-get purge -y --auto-remove -o APT::AutoRemove::RecommendsImportant=false; \
+	rm -rf /var/lib/apt/lists/*; \
 	\
 	! { ldd "$extDir"/*.so | grep 'not found'; }; \
 # check for output like "PHP Warning:  PHP Startup: Unable to load dynamic library 'foo' (tried: ...)
@@ -76,16 +84,17 @@ RUN set -ex; \
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
+# enabled by default in the php images: https://github.com/docker-library/php/pull/1587
 RUN set -eux; \
-	docker-php-ext-enable opcache; \
 	{ \
 		echo 'opcache.memory_consumption=128'; \
 		echo 'opcache.interned_strings_buffer=8'; \
 		echo 'opcache.max_accelerated_files=4000'; \
 		echo 'opcache.revalidate_freq=2'; \
-	} > /usr/local/etc/php/conf.d/opcache-recommended.ini
+	} > "$PHP_INI_DIR/conf.d/opcache-recommended.ini"
 # https://wordpress.org/support/article/editing-wp-config-php/#configure-error-logging
-RUN { \
+RUN set -eux; \
+	{ \
 # https://www.php.net/manual/en/errorfunc.constants.php
 # https://github.com/docker-library/wordpress/issues/420#issuecomment-517839670
 		echo 'error_reporting = E_ERROR | E_WARNING | E_PARSE | E_CORE_ERROR | E_CORE_WARNING | E_COMPILE_ERROR | E_COMPILE_WARNING | E_RECOVERABLE_ERROR'; \
@@ -97,11 +106,11 @@ RUN { \
 		echo 'ignore_repeated_errors = On'; \
 		echo 'ignore_repeated_source = Off'; \
 		echo 'html_errors = Off'; \
-	} > /usr/local/etc/php/conf.d/error-logging.ini
+	} > "$PHP_INI_DIR/conf.d/error-logging.ini"
 
 RUN set -eux; \
-	version='6.8.3'; \
-	sha1='fd56bcdc15f1877e45dce67942ea75949ed650e8'; \
+	version='7.0-RC2'; \
+	sha1='829cd48a30fd8458902f19d5f35361ec6e335341'; \
 	\
 	curl -o wordpress.tar.gz -fL "https://wordpress.org/wordpress-$version.tar.gz"; \
 	echo "$sha1 *wordpress.tar.gz" | sha1sum -c -; \

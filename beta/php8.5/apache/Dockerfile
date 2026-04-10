@@ -4,7 +4,12 @@
 # PLEASE DO NOT EDIT IT DIRECTLY.
 #
 
-FROM php:8.1-fpm
+<<<<<<< HEAD:latest/php8.1/apache/Dockerfile
+# create as a "base" without the wordpress code
+FROM php:8.1-apache as wordpress-base
+=======
+FROM php:8.5-apache
+>>>>>>> upstream/master:beta/php8.5/apache/Dockerfile
 
 # persistent dependencies
 RUN set -eux; \
@@ -12,6 +17,10 @@ RUN set -eux; \
 	apt-get install -y --no-install-recommends \
 # Ghostscript is required for rendering PDF previews
 		ghostscript \
+# pull in AV1 & HEVC image encoding (and not just decoding)
+# https://github.com/docker-library/wordpress/issues/996
+		libheif-plugin-aomenc \
+		libheif-plugin-x265 \
 	; \
 	rm -rf /var/lib/apt/lists/*
 
@@ -30,6 +39,10 @@ RUN set -ex; \
 		libpng-dev \
 		libwebp-dev \
 		libzip-dev \
+		libxml2-dev \
+		libc-client-dev \
+		libkrb5-dev \
+		libmcrypt-dev \
 	; \
 	\
 	docker-php-ext-configure gd \
@@ -38,6 +51,7 @@ RUN set -ex; \
 		--with-jpeg \
 		--with-webp \
 	; \
+	docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
 	docker-php-ext-install -j "$(nproc)" \
 		bcmath \
 		exif \
@@ -45,10 +59,18 @@ RUN set -ex; \
 		intl \
 		mysqli \
 		zip \
+		dom \
+		soap \
+		sockets \
+		gettext \
+		imap \
 	; \
+       # docker-php-ext-configure imap --with-imap-ssl --with-kerberos; \
 # https://pecl.php.net/package/imagick
-	pecl install imagick-3.8.0; \
+	pecl install imagick-3.8.1; \
 	docker-php-ext-enable imagick; \
+	pecl install -o redis && docker-php-ext-enable redis; \
+	pecl install -o apcu && docker-php-ext-enable apcu; \
 	rm -r /tmp/pear; \
 	\
 # some misbehaving extensions end up outputting to stdout 🙈 (https://github.com/docker-library/wordpress/issues/669#issuecomment-993945967)
@@ -80,16 +102,17 @@ RUN set -ex; \
 
 # set recommended PHP.ini settings
 # see https://secure.php.net/manual/en/opcache.installation.php
+# enabled by default in the php images: https://github.com/docker-library/php/pull/1587
 RUN set -eux; \
-	docker-php-ext-enable opcache; \
 	{ \
 		echo 'opcache.memory_consumption=128'; \
 		echo 'opcache.interned_strings_buffer=8'; \
 		echo 'opcache.max_accelerated_files=4000'; \
 		echo 'opcache.revalidate_freq=2'; \
-	} > /usr/local/etc/php/conf.d/opcache-recommended.ini
+	} > "$PHP_INI_DIR/conf.d/opcache-recommended.ini"
 # https://wordpress.org/support/article/editing-wp-config-php/#configure-error-logging
-RUN { \
+RUN set -eux; \
+	{ \
 # https://www.php.net/manual/en/errorfunc.constants.php
 # https://github.com/docker-library/wordpress/issues/420#issuecomment-517839670
 		echo 'error_reporting = E_ERROR | E_WARNING | E_PARSE | E_CORE_ERROR | E_CORE_WARNING | E_COMPILE_ERROR | E_COMPILE_WARNING | E_RECOVERABLE_ERROR'; \
@@ -101,11 +124,30 @@ RUN { \
 		echo 'ignore_repeated_errors = On'; \
 		echo 'ignore_repeated_source = Off'; \
 		echo 'html_errors = Off'; \
-	} > /usr/local/etc/php/conf.d/error-logging.ini
+	} > "$PHP_INI_DIR/conf.d/error-logging.ini"
 
 RUN set -eux; \
-	version='6.9-beta4'; \
-	sha1='bce7adfc31bc01eb7c2fced0ec394064d9820275'; \
+	a2enmod rewrite expires; \
+	\
+# https://httpd.apache.org/docs/2.4/mod/mod_remoteip.html
+	a2enmod remoteip; \
+	{ \
+		echo 'RemoteIPHeader X-Forwarded-For'; \
+# these IP ranges are reserved for "private" use and should thus *usually* be safe inside Docker
+		echo 'RemoteIPInternalProxy 10.0.0.0/8'; \
+		echo 'RemoteIPInternalProxy 172.16.0.0/12'; \
+		echo 'RemoteIPInternalProxy 192.168.0.0/16'; \
+		echo 'RemoteIPInternalProxy 169.254.0.0/16'; \
+		echo 'RemoteIPInternalProxy 127.0.0.0/8'; \
+	} > /etc/apache2/conf-available/remoteip.conf; \
+	a2enconf remoteip; \
+# https://github.com/docker-library/wordpress/issues/383#issuecomment-507886512
+# (replace all instances of "%h" with "%a" in LogFormat)
+	find /etc/apache2 -type f -name '*.conf' -exec sed -ri 's/([[:space:]]*LogFormat[[:space:]]+"[^"]*)%h([^"]*")/\1%a\2/g' '{}' +
+FROM wordpress-base
+RUN set -eux; \
+	version='7.0-RC2'; \
+	sha1='829cd48a30fd8458902f19d5f35361ec6e335341'; \
 	\
 	curl -o wordpress.tar.gz -fL "https://wordpress.org/wordpress-$version.tar.gz"; \
 	echo "$sha1 *wordpress.tar.gz" | sha1sum -c -; \
@@ -149,4 +191,4 @@ COPY docker-entrypoint.sh /usr/local/bin/
 RUN ln -svfT docker-entrypoint.sh /usr/local/bin/docker-ensure-installed.sh
 
 ENTRYPOINT ["docker-entrypoint.sh"]
-CMD ["php-fpm"]
+CMD ["apache2-foreground"]

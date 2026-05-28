@@ -9,6 +9,7 @@
     "sha1": "e50bb75667ecaa0eac0694fb3c7b024afc96fde0",
     "upstream": "7.0",
     "variants": [
+      "apache",
       "apache-bookworm"
     ],
     "civicrmVersion": "6.14.1",
